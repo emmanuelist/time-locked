@@ -141,3 +141,91 @@
     (err err-not-found)
   )
 )
+
+;; Check if user has active deposit
+(define-read-only (has-active-deposit (user principal))
+  (match (map-get? deposits { user: user })
+    deposit (not (get withdrawn deposit))
+    false
+  )
+)
+
+;; Get vault's STX balance
+(define-read-only (get-vault-balance)
+  (ok (stx-get-balance (as-contract tx-sender)))
+)
+
+;; ========================================
+;; Public Functions - Core Vault Logic
+;; ========================================
+
+;; Initialize vault (called once by deployer)
+(define-public (initialize-vault)
+  (begin
+    (asserts! (is-eq tx-sender contract-owner) err-owner-only)
+    (asserts! (is-eq (var-get vault-creation-height) u0) err-already-exists)
+    (var-set vault-creation-height burn-block-height)
+    (ok true)
+  )
+)
+
+;; Deposit STX with chosen lock period
+;; CLARITY 4: Uses burn-block-height for Bitcoin-anchored time-locking
+(define-public (deposit (amount uint) (lock-tier (string-ascii 10)))
+  (let
+    (
+      (user tx-sender)
+      (lock-blocks (get-lock-blocks lock-tier))
+      (yield-rate (get-yield-rate lock-tier))
+      (unlock-height (+ burn-block-height lock-blocks))
+    )
+    ;; Validations
+    (asserts! (not (var-get vault-paused)) err-vault-paused)
+    (asserts! (> amount u0) err-zero-amount)
+    (asserts! (<= amount max-deposit) err-invalid-amount)
+    (asserts! (> lock-blocks u0) err-invalid-lock-period)
+    (asserts! (not (has-active-deposit user)) err-already-exists)
+    (asserts! (>= (stx-get-balance user) amount) err-insufficient-balance)
+    
+    ;; Transfer STX to contract
+    ;; Users should set post-conditions: 
+    ;; - STX transfer of exact amount
+    ;; - No other assets transferred
+    (try! (stx-transfer? amount user (as-contract tx-sender)))
+    
+    ;; Create deposit record
+    (map-set deposits
+      { user: user }
+      {
+        amount: amount,
+        lock-period: lock-blocks,
+        deposit-height: burn-block-height,
+        unlock-height: unlock-height,
+        yield-rate: yield-rate,
+        withdrawn: false
+      }
+    )
+    
+    ;; Update user stats
+    (update-user-stats-deposit user amount)
+    
+    ;; Update vault totals with overflow check
+    (asserts! (<= (+ (var-get total-locked) amount) max-deposit) err-invalid-amount)
+    (var-set total-locked (+ (var-get total-locked) amount))
+    
+    ;; Print event for indexers
+    (print {
+      event: "deposit",
+      user: user,
+      amount: amount,
+      unlock-height: unlock-height,
+      yield-rate: yield-rate
+    })
+    
+    (ok {
+      amount: amount,
+      unlock-height: unlock-height,
+      yield-rate: yield-rate
+    })
+  )
+)
