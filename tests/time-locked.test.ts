@@ -484,3 +484,102 @@ describe("Time-Locked Vault Contract", () => {
       );
       expect(result).toBeOk(Cl.bool(true));
     });
+
+    it("should prevent deposits when vault is paused", () => {
+      // Pause vault
+      simnet.callPublicFn(CONTRACT_NAME, "pause-vault", [], deployer);
+      
+      // Try to deposit
+      const { result } = simnet.callPublicFn(
+        CONTRACT_NAME,
+        "deposit",
+        [Cl.uint(1000000), Cl.stringAscii("short")],
+        wallet1
+      );
+      
+      expect(result).toBeErr(Cl.uint(106)); // err-vault-paused
+    });
+
+    it("should allow owner to fund vault", () => {
+      const fundAmount = 10000000; // 10 STX
+      const { result } = simnet.callPublicFn(
+        CONTRACT_NAME,
+        "fund-vault",
+        [Cl.uint(fundAmount)],
+        deployer
+      );
+      expect(result).toBeOk(Cl.uint(fundAmount));
+    });
+
+    it("should not allow non-owner to fund vault", () => {
+      const { result } = simnet.callPublicFn(
+        CONTRACT_NAME,
+        "fund-vault",
+        [Cl.uint(1000000)],
+        wallet1
+      );
+      expect(result).toBeErr(Cl.uint(100)); // err-owner-only
+    });
+
+    it("should reject zero amount vault funding", () => {
+      const { result } = simnet.callPublicFn(
+        CONTRACT_NAME,
+        "fund-vault",
+        [Cl.uint(0)],
+        deployer
+      );
+      expect(result).toBeErr(Cl.uint(108)); // err-zero-amount
+    });
+  });
+
+  describe("Read-Only Functions", () => {
+    it("should return None for non-existent deposit", () => {
+      const { result } = simnet.callReadOnlyFn(
+        CONTRACT_NAME,
+        "get-deposit-info",
+        [Cl.principal(wallet1)],
+        wallet1
+      );
+      expect(result).toBeOk(Cl.none());
+    });
+
+    it("should return None for non-existent user stats", () => {
+      const { result } = simnet.callReadOnlyFn(
+        CONTRACT_NAME,
+        "get-user-stats",
+        [Cl.principal(wallet1)],
+        wallet1
+      );
+      expect(result).toBeOk(Cl.none());
+    });
+
+    it("should return correct vault balance", () => {
+      const depositAmount = 1000000;
+      
+      simnet.callPublicFn(
+        CONTRACT_NAME,
+        "deposit",
+        [Cl.uint(depositAmount), Cl.stringAscii("short")],
+        wallet1
+      );
+      
+      const { result } = simnet.callReadOnlyFn(
+        CONTRACT_NAME,
+        "get-vault-balance",
+        [],
+        wallet1
+      );
+      
+      expect(result).toBeOk(Cl.uint(depositAmount));
+    });
+
+    it("should return current burn height", () => {
+      const { result } = simnet.callReadOnlyFn(
+        CONTRACT_NAME,
+        "get-current-burn-height",
+        [],
+        wallet1
+      );
+      expect(result).toBeUint(simnet.burnBlockHeight);
+    });
+  });
