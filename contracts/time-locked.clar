@@ -324,3 +324,53 @@
     })
   )
 )
+
+;; ========================================
+;; Admin Functions
+;; ========================================
+
+(define-public (pause-vault)
+  (begin
+    (asserts! (is-eq tx-sender contract-owner) err-owner-only)
+    (var-set vault-paused true)
+    (print { event: "vault-paused" })
+    (ok true)
+  )
+)
+
+(define-public (unpause-vault)
+  (begin
+    (asserts! (is-eq tx-sender contract-owner) err-owner-only)
+    (var-set vault-paused false)
+    (print { event: "vault-unpaused" })
+    (ok true)
+  )
+)
+
+;; Fund vault with yield reserves
+(define-public (fund-vault (amount uint))
+  (begin
+    (asserts! (is-eq tx-sender contract-owner) err-owner-only)
+    (asserts! (> amount u0) err-zero-amount)
+    (try! (stx-transfer? amount tx-sender (as-contract tx-sender)))
+    (print { event: "vault-funded", amount: amount })
+    (ok amount)
+  )
+)
+
+;; ========================================
+;; Private Helper Functions
+;; ========================================
+
+(define-private (get-lock-blocks (tier (string-ascii 10)))
+  (if (is-eq tier "short")
+    short-lock-blocks
+    (if (is-eq tier "medium")
+      medium-lock-blocks
+      (if (is-eq tier "long")
+        long-lock-blocks
+        u0
+      )
+    )
+  )
+)
