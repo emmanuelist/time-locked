@@ -84,3 +84,97 @@ describe("Time-Locked Vault Contract", () => {
         })
       );
     });
+
+    it("should allow user to deposit with medium lock period", () => {
+      const depositAmount = 2000000; // 2 STX
+      const { result } = simnet.callPublicFn(
+        CONTRACT_NAME,
+        "deposit",
+        [Cl.uint(depositAmount), Cl.stringAscii("medium")],
+        wallet1
+      );
+      
+      expect(result).toBeOk(
+        Cl.tuple({
+          amount: Cl.uint(depositAmount),
+          "unlock-height": Cl.uint(simnet.burnBlockHeight + MEDIUM_LOCK_BLOCKS),
+          "yield-rate": Cl.uint(1000),
+        })
+      );
+    });
+
+    it("should allow user to deposit with long lock period", () => {
+      const depositAmount = 5000000; // 5 STX
+      const { result } = simnet.callPublicFn(
+        CONTRACT_NAME,
+        "deposit",
+        [Cl.uint(depositAmount), Cl.stringAscii("long")],
+        wallet2
+      );
+      
+      expect(result).toBeOk(
+        Cl.tuple({
+          amount: Cl.uint(depositAmount),
+          "unlock-height": Cl.uint(simnet.burnBlockHeight + LONG_LOCK_BLOCKS),
+          "yield-rate": Cl.uint(1500),
+        })
+      );
+    });
+
+    it("should reject zero amount deposits", () => {
+      const { result } = simnet.callPublicFn(
+        CONTRACT_NAME,
+        "deposit",
+        [Cl.uint(0), Cl.stringAscii("short")],
+        wallet1
+      );
+      expect(result).toBeErr(Cl.uint(108)); // err-zero-amount
+    });
+
+    it("should reject invalid lock tier", () => {
+      const { result } = simnet.callPublicFn(
+        CONTRACT_NAME,
+        "deposit",
+        [Cl.uint(1000000), Cl.stringAscii("invalid")],
+        wallet1
+      );
+      expect(result).toBeErr(Cl.uint(107)); // err-invalid-lock-period
+    });
+
+    it("should reject duplicate deposit from same user", () => {
+      const depositAmount = 1000000;
+      
+      // First deposit should succeed
+      simnet.callPublicFn(
+        CONTRACT_NAME,
+        "deposit",
+        [Cl.uint(depositAmount), Cl.stringAscii("short")],
+        wallet1
+      );
+      
+      // Second deposit should fail
+      const { result } = simnet.callPublicFn(
+        CONTRACT_NAME,
+        "deposit",
+        [Cl.uint(depositAmount), Cl.stringAscii("short")],
+        wallet1
+      );
+      expect(result).toBeErr(Cl.uint(104)); // err-already-exists
+    });
+
+    it("should update vault stats after deposit", () => {
+      const depositAmount = 1000000;
+      
+      simnet.callPublicFn(
+        CONTRACT_NAME,
+        "deposit",
+        [Cl.uint(depositAmount), Cl.stringAscii("short")],
+        wallet1
+      );
+      
+      const { result } = simnet.callReadOnlyFn(
+        CONTRACT_NAME,
+        "get-vault-stats",
+        [],
+        wallet1
+      );
