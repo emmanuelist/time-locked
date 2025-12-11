@@ -178,7 +178,7 @@ describe("Time-Locked Vault Contract", () => {
         [],
         wallet1
       );
-
+      
       expect(result).toBeOk(
         Cl.tuple({
           "total-locked": Cl.uint(depositAmount),
@@ -275,7 +275,7 @@ describe("Time-Locked Vault Contract", () => {
         [],
         wallet1
       );
-
+      
       // Calculate expected yield: (amount * yield-rate * blocks-locked) / (lock-period * 10000)
       // blocks-locked = SHORT_LOCK_BLOCKS + 1, lock-period = SHORT_LOCK_BLOCKS
       const blocksLocked = SHORT_LOCK_BLOCKS + 1;
@@ -583,3 +583,56 @@ describe("Time-Locked Vault Contract", () => {
       expect(result).toBeUint(simnet.burnBlockHeight);
     });
   });
+
+  describe("Multiple Users", () => {
+    it("should allow multiple users to deposit independently", () => {
+      // Wallet 1 deposits
+      const result1 = simnet.callPublicFn(
+        CONTRACT_NAME,
+        "deposit",
+        [Cl.uint(1000000), Cl.stringAscii("short")],
+        wallet1
+      );
+      expect(result1.result).toBeOk(
+        Cl.tuple({
+          amount: Cl.uint(1000000),
+          "unlock-height": Cl.uint(simnet.burnBlockHeight + SHORT_LOCK_BLOCKS),
+          "yield-rate": Cl.uint(500),
+        })
+      );
+      
+      // Wallet 2 deposits
+      const result2 = simnet.callPublicFn(
+        CONTRACT_NAME,
+        "deposit",
+        [Cl.uint(2000000), Cl.stringAscii("medium")],
+        wallet2
+      );
+      expect(result2.result).toBeOk(
+        Cl.tuple({
+          amount: Cl.uint(2000000),
+          "unlock-height": Cl.uint(simnet.burnBlockHeight + MEDIUM_LOCK_BLOCKS),
+          "yield-rate": Cl.uint(1000),
+        })
+      );
+      
+      // Check vault stats
+      const { result } = simnet.callReadOnlyFn(
+        CONTRACT_NAME,
+        "get-vault-stats",
+        [],
+        deployer
+      );
+      
+      expect(result).toBeOk(
+        Cl.tuple({
+          "total-locked": Cl.uint(3000000),
+          "total-yield-distributed": Cl.uint(0),
+          "vault-paused": Cl.bool(false),
+          "current-burn-height": Cl.uint(simnet.burnBlockHeight),
+          "creation-height": Cl.uint(simnet.burnBlockHeight),
+        })
+      );
+    });
+  });
+});
