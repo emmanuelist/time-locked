@@ -275,3 +275,108 @@ describe("Time-Locked Vault Contract", () => {
         [],
         wallet1
       );
+
+      // Calculate expected yield: (amount * yield-rate * blocks-locked) / (lock-period * 10000)
+      // blocks-locked = SHORT_LOCK_BLOCKS + 1, lock-period = SHORT_LOCK_BLOCKS
+      const blocksLocked = SHORT_LOCK_BLOCKS + 1;
+      const expectedYield = Math.floor((depositAmount * 500 * blocksLocked) / (SHORT_LOCK_BLOCKS * 10000));
+      
+      expect(result).toBeOk(
+        Cl.tuple({
+          principal: Cl.uint(depositAmount),
+          yield: Cl.uint(expectedYield),
+          total: Cl.uint(depositAmount + expectedYield),
+        })
+      );
+    });
+
+    it("should not allow double withdrawal", () => {
+      const depositAmount = 1000000;
+      
+      // Fund vault
+      simnet.callPublicFn(
+        CONTRACT_NAME,
+        "fund-vault",
+        [Cl.uint(10000000)],
+        deployer
+      );
+      
+      // Make deposit
+      simnet.callPublicFn(
+        CONTRACT_NAME,
+        "deposit",
+        [Cl.uint(depositAmount), Cl.stringAscii("short")],
+        wallet1
+      );
+      
+      // Mine blocks
+      simnet.mineEmptyBurnBlocks(SHORT_LOCK_BLOCKS + 1);
+      
+      // First withdrawal
+      simnet.callPublicFn(CONTRACT_NAME, "withdraw", [], wallet1);
+      
+      // Second withdrawal should fail
+      const { result } = simnet.callPublicFn(
+        CONTRACT_NAME,
+        "withdraw",
+        [],
+        wallet1
+      );
+      
+      expect(result).toBeErr(Cl.uint(101)); // err-not-found
+    });
+
+    it("should fail if user has no deposit", () => {
+      const { result } = simnet.callPublicFn(
+        CONTRACT_NAME,
+        "withdraw",
+        [],
+        wallet1
+      );
+      
+      expect(result).toBeErr(Cl.uint(101)); // err-not-found
+    });
+
+    it("should calculate yield correctly for medium lock", () => {
+      const depositAmount = 2000000; // 2 STX
+      
+      // Fund vault
+      simnet.callPublicFn(
+        CONTRACT_NAME,
+        "fund-vault",
+        [Cl.uint(20000000)],
+        deployer
+      );
+      
+      // Make deposit
+      simnet.callPublicFn(
+        CONTRACT_NAME,
+        "deposit",
+        [Cl.uint(depositAmount), Cl.stringAscii("medium")],
+        wallet1
+      );
+      
+      // Mine blocks
+      simnet.mineEmptyBurnBlocks(MEDIUM_LOCK_BLOCKS + 1);
+      
+      // Withdraw
+      const { result } = simnet.callPublicFn(
+        CONTRACT_NAME,
+        "withdraw",
+        [],
+        wallet1
+      );
+      
+      // Calculate expected yield: (amount * yield-rate * blocks-locked) / (lock-period * 10000)
+      const blocksLocked = MEDIUM_LOCK_BLOCKS + 1;
+      const expectedYield = Math.floor((depositAmount * 1000 * blocksLocked) / (MEDIUM_LOCK_BLOCKS * 10000));
+      
+      expect(result).toBeOk(
+        Cl.tuple({
+          principal: Cl.uint(depositAmount),
+          yield: Cl.uint(expectedYield),
+          total: Cl.uint(depositAmount + expectedYield),
+        })
+      );
+    });
+  });
