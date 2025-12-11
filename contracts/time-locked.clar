@@ -87,3 +87,57 @@
     false
   )
 )
+
+;; Calculate Bitcoin blocks remaining in lock period
+(define-read-only (get-blocks-remaining (user principal))
+  (match (map-get? deposits { user: user })
+    deposit 
+      (if (>= burn-block-height (get unlock-height deposit))
+        u0
+        (- (get unlock-height deposit) burn-block-height)
+      )
+    u0
+  )
+)
+
+;; ========================================
+;; Read-Only Functions
+;; ========================================
+
+(define-read-only (get-deposit-info (user principal))
+  (ok (map-get? deposits { user: user }))
+)
+
+(define-read-only (get-user-stats (user principal))
+  (ok (map-get? user-stats { user: user }))
+)
+
+(define-read-only (get-vault-stats)
+  (ok {
+    total-locked: (var-get total-locked),
+    total-yield-distributed: (var-get total-yield-distributed),
+    vault-paused: (var-get vault-paused),
+    current-burn-height: burn-block-height,
+    creation-height: (var-get vault-creation-height)
+  })
+)
+
+;; Calculate yield earned based on Bitcoin blocks elapsed
+(define-read-only (calculate-yield (user principal))
+  (match (map-get? deposits { user: user })
+    deposit
+      (let
+        (
+          (amount (get amount deposit))
+          (yield-rate (get yield-rate deposit))
+          (blocks-locked (- burn-block-height (get deposit-height deposit)))
+          (lock-period (get lock-period deposit))
+        )
+        ;; Prevent division by zero
+        (asserts! (> lock-period u0) err-invalid-lock-period)
+        ;; Yield = (amount * yield-rate * blocks-locked) / (lock-period * 10000)
+        (ok (/ (* (* amount yield-rate) blocks-locked) (* lock-period u10000)))
+      )
+    (err err-not-found)
+  )
+)
