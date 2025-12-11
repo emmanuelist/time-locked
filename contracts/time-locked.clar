@@ -178,13 +178,18 @@
       (lock-blocks (get-lock-blocks lock-tier))
       (yield-rate (get-yield-rate lock-tier))
       (unlock-height (+ burn-block-height lock-blocks))
+      ;; Inline has-active-deposit logic
+      (existing-deposit (map-get? deposits { user: user }))
+      (has-active (match existing-deposit
+        deposit (not (get withdrawn deposit))
+        false))
     )
     ;; Validations
     (asserts! (not (var-get vault-paused)) err-vault-paused)
     (asserts! (> amount u0) err-zero-amount)
     (asserts! (<= amount max-deposit) err-invalid-amount)
     (asserts! (> lock-blocks u0) err-invalid-lock-period)
-    (asserts! (not (has-active-deposit user)) err-already-exists)
+    (asserts! (not has-active) err-already-exists)
     (asserts! (>= (stx-get-balance user) amount) err-insufficient-balance)
     
     ;; Transfer STX to contract
@@ -238,10 +243,15 @@
       (user tx-sender)
       (deposit-info (unwrap! (map-get? deposits { user: user }) err-not-found))
       (amount (get amount deposit-info))
-      (yield-earned (unwrap! (calculate-yield user) err-not-found))
+      ;; Inline calculate-yield logic
+      (yield-rate (get yield-rate deposit-info))
+      (blocks-locked (- burn-block-height (get deposit-height deposit-info)))
+      (lock-period (get lock-period deposit-info))
+      (yield-earned (/ (* (* amount yield-rate) blocks-locked) (* lock-period u10000)))
       (total-payout (+ amount yield-earned))
     )
     ;; Validations
+    (asserts! (> lock-period u0) err-invalid-lock-period)
     (asserts! (not (get withdrawn deposit-info)) err-not-found)
     (asserts! (>= burn-block-height (get unlock-height deposit-info)) err-lock-period-not-met)
     (asserts! (>= (stx-get-balance (as-contract tx-sender)) total-payout) err-insufficient-vault-balance)
@@ -427,3 +437,10 @@
     false
   )
 )
+
+;; ========================================
+;; Contract Initialization
+;; ========================================
+
+;; Auto-initialize on deployment using Bitcoin block height
+(var-set vault-creation-height burn-block-height)
