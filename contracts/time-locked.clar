@@ -277,3 +277,50 @@
     })
   )
 )
+
+;; Emergency withdraw with penalty (lose all yield)
+;; CLARITY 4: Bitcoin block-based penalty calculation
+(define-public (emergency-withdraw)
+  (let
+    (
+      (user tx-sender)
+      (deposit-info (unwrap! (map-get? deposits { user: user }) err-not-found))
+      (amount (get amount deposit-info))
+      ;; Penalty: 10% of principal for early withdrawal
+      (penalty (/ amount u10))
+      (payout (- amount penalty))
+    )
+    ;; Validations
+    (asserts! (not (get withdrawn deposit-info)) err-not-found)
+    (asserts! (< burn-block-height (get unlock-height deposit-info)) err-lock-period-not-met)
+    (asserts! (>= (stx-get-balance (as-contract tx-sender)) payout) err-insufficient-vault-balance)
+    
+    ;; Mark as withdrawn BEFORE transfer
+    (map-set deposits
+      { user: user }
+      (merge deposit-info { withdrawn: true })
+    )
+    
+    ;; Transfer with penalty
+    (try! (as-contract (stx-transfer? payout tx-sender user)))
+    
+    ;; Update stats
+    (update-user-stats-withdraw user payout u0)
+    (var-set total-locked (- (var-get total-locked) amount))
+    
+    ;; Print event
+    (print {
+      event: "emergency-withdraw",
+      user: user,
+      principal: payout,
+      penalty: penalty,
+      yield-forfeited: u0
+    })
+    
+    (ok {
+      principal: payout,
+      penalty: penalty,
+      yield-forfeited: u0
+    })
+  )
+)
