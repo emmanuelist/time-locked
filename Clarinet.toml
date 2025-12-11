@@ -8,7 +8,7 @@ requirements = []
 [contracts.time-locked]
 path = 'contracts/time-locked.clar'
 clarity_version = 3
-epoch = '3.0'
+epoch = 'latest'
 [repl.analysis]
 passes = ['check_checker']
 
