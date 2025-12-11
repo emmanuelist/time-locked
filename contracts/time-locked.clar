@@ -41,3 +41,49 @@
 (define-data-var total-locked uint u0)
 (define-data-var total-yield-distributed uint u0)
 (define-data-var vault-creation-height uint u0)
+
+;; ========================================
+;; Data Maps
+;; ========================================
+
+;; User deposits with Bitcoin block-height based time-lock
+(define-map deposits
+  { user: principal }
+  {
+    amount: uint,
+    lock-period: uint,
+    deposit-height: uint,
+    unlock-height: uint,
+    yield-rate: uint,
+    withdrawn: bool
+  }
+)
+
+;; Track total deposits per user
+(define-map user-stats
+  { user: principal }
+  {
+    total-deposited: uint,
+    total-withdrawn: uint,
+    total-yield-earned: uint,
+    deposit-count: uint
+  }
+)
+
+;; ========================================
+;; Clarity 4 Feature: Bitcoin Block Height
+;; Using burn-block-height for stability
+;; ========================================
+
+;; Get current Bitcoin block height (more stable than Stacks block-height)
+(define-read-only (get-current-burn-height)
+  burn-block-height
+)
+
+;; Check if lock period has expired using Bitcoin blocks
+(define-read-only (is-lock-expired (user principal))
+  (match (map-get? deposits { user: user })
+    deposit (>= burn-block-height (get unlock-height deposit))
+    false
+  )
+)
