@@ -229,3 +229,51 @@
     })
   )
 )
+
+;; Withdraw principal + yield after lock period
+;; CLARITY 4: Uses burn-block-height to verify lock expiration
+(define-public (withdraw)
+  (let
+    (
+      (user tx-sender)
+      (deposit-info (unwrap! (map-get? deposits { user: user }) err-not-found))
+      (amount (get amount deposit-info))
+      (yield-earned (unwrap! (calculate-yield user) err-not-found))
+      (total-payout (+ amount yield-earned))
+    )
+    ;; Validations
+    (asserts! (not (get withdrawn deposit-info)) err-not-found)
+    (asserts! (>= burn-block-height (get unlock-height deposit-info)) err-lock-period-not-met)
+    (asserts! (>= (stx-get-balance (as-contract tx-sender)) total-payout) err-insufficient-vault-balance)
+    
+    ;; Mark as withdrawn BEFORE transfer (checks-effects-interactions pattern)
+    (map-set deposits
+      { user: user }
+      (merge deposit-info { withdrawn: true })
+    )
+    
+    ;; Transfer principal + yield back to user
+    ;; Users should set post-conditions for expected payout
+    (try! (as-contract (stx-transfer? total-payout tx-sender user)))
+    
+    ;; Update stats
+    (update-user-stats-withdraw user amount yield-earned)
+    (var-set total-locked (- (var-get total-locked) amount))
+    (var-set total-yield-distributed (+ (var-get total-yield-distributed) yield-earned))
+    
+    ;; Print event
+    (print {
+      event: "withdraw",
+      user: user,
+      principal: amount,
+      yield: yield-earned,
+      total: total-payout
+    })
+    
+    (ok {
+      principal: amount,
+      yield: yield-earned,
+      total: total-payout
+    })
+  )
+)
