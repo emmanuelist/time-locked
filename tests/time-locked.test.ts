@@ -380,3 +380,107 @@ describe("Time-Locked Vault Contract", () => {
       );
     });
   });
+
+  describe("Emergency Withdraw", () => {
+    it("should allow emergency withdraw before lock period with penalty", () => {
+      const depositAmount = 1000000;
+      
+      // Make deposit
+      simnet.callPublicFn(
+        CONTRACT_NAME,
+        "deposit",
+        [Cl.uint(depositAmount), Cl.stringAscii("short")],
+        wallet1
+      );
+      
+      // Emergency withdraw immediately
+      const { result } = simnet.callPublicFn(
+        CONTRACT_NAME,
+        "emergency-withdraw",
+        [],
+        wallet1
+      );
+      
+      const penalty = Math.floor(depositAmount / 10); // 10% penalty
+      const payout = depositAmount - penalty;
+      
+      expect(result).toBeOk(
+        Cl.tuple({
+          principal: Cl.uint(payout),
+          penalty: Cl.uint(penalty),
+          "yield-forfeited": Cl.uint(0),
+        })
+      );
+    });
+
+    it("should not allow emergency withdraw after lock period", () => {
+      const depositAmount = 1000000;
+      
+      // Make deposit
+      simnet.callPublicFn(
+        CONTRACT_NAME,
+        "deposit",
+        [Cl.uint(depositAmount), Cl.stringAscii("short")],
+        wallet1
+      );
+      
+      // Mine blocks past lock period
+      simnet.mineEmptyBurnBlocks(SHORT_LOCK_BLOCKS + 1);
+      
+      // Try emergency withdraw
+      const { result } = simnet.callPublicFn(
+        CONTRACT_NAME,
+        "emergency-withdraw",
+        [],
+        wallet1
+      );
+      
+      expect(result).toBeErr(Cl.uint(103)); // err-lock-period-not-met
+    });
+
+    it("should not allow emergency withdraw without deposit", () => {
+      const { result } = simnet.callPublicFn(
+        CONTRACT_NAME,
+        "emergency-withdraw",
+        [],
+        wallet1
+      );
+      
+      expect(result).toBeErr(Cl.uint(101)); // err-not-found
+    });
+  });
+
+  describe("Admin Functions", () => {
+    it("should allow owner to pause vault", () => {
+      const { result } = simnet.callPublicFn(
+        CONTRACT_NAME,
+        "pause-vault",
+        [],
+        deployer
+      );
+      expect(result).toBeOk(Cl.bool(true));
+    });
+
+    it("should not allow non-owner to pause vault", () => {
+      const { result } = simnet.callPublicFn(
+        CONTRACT_NAME,
+        "pause-vault",
+        [],
+        wallet1
+      );
+      expect(result).toBeErr(Cl.uint(100)); // err-owner-only
+    });
+
+    it("should allow owner to unpause vault", () => {
+      // Pause first
+      simnet.callPublicFn(CONTRACT_NAME, "pause-vault", [], deployer);
+      
+      // Unpause
+      const { result } = simnet.callPublicFn(
+        CONTRACT_NAME,
+        "unpause-vault",
+        [],
+        deployer
+      );
+      expect(result).toBeOk(Cl.bool(true));
+    });
