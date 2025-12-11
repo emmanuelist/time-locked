@@ -178,3 +178,100 @@ describe("Time-Locked Vault Contract", () => {
         [],
         wallet1
       );
+
+      expect(result).toBeOk(
+        Cl.tuple({
+          "total-locked": Cl.uint(depositAmount),
+          "total-yield-distributed": Cl.uint(0),
+          "vault-paused": Cl.bool(false),
+          "current-burn-height": Cl.uint(simnet.burnBlockHeight),
+          "creation-height": Cl.uint(simnet.burnBlockHeight),
+        })
+      );
+    });
+
+    it("should store deposit info correctly", () => {
+      const depositAmount = 1000000;
+      const currentHeight = simnet.burnBlockHeight;
+      
+      simnet.callPublicFn(
+        CONTRACT_NAME,
+        "deposit",
+        [Cl.uint(depositAmount), Cl.stringAscii("short")],
+        wallet1
+      );
+      
+      const { result } = simnet.callReadOnlyFn(
+        CONTRACT_NAME,
+        "get-deposit-info",
+        [Cl.principal(wallet1)],
+        wallet1
+      );
+      
+      expect(result).toBeOk(
+        Cl.some(
+          Cl.tuple({
+            amount: Cl.uint(depositAmount),
+            "lock-period": Cl.uint(SHORT_LOCK_BLOCKS),
+            "deposit-height": Cl.uint(currentHeight),
+            "unlock-height": Cl.uint(currentHeight + SHORT_LOCK_BLOCKS),
+            "yield-rate": Cl.uint(500),
+            withdrawn: Cl.bool(false),
+          })
+        )
+      );
+    });
+  });
+
+  describe("Withdraw Function", () => {
+    it("should not allow withdrawal before lock period", () => {
+      const depositAmount = 1000000;
+      
+      // Make deposit
+      simnet.callPublicFn(
+        CONTRACT_NAME,
+        "deposit",
+        [Cl.uint(depositAmount), Cl.stringAscii("short")],
+        wallet1
+      );
+      
+      // Try to withdraw immediately
+      const { result } = simnet.callPublicFn(
+        CONTRACT_NAME,
+        "withdraw",
+        [],
+        wallet1
+      );
+      
+      expect(result).toBeErr(Cl.uint(103)); // err-lock-period-not-met
+    });
+
+    it("should allow withdrawal after lock period", () => {
+      const depositAmount = 1000000;
+      
+      // Fund vault with yield
+      simnet.callPublicFn(
+        CONTRACT_NAME,
+        "fund-vault",
+        [Cl.uint(10000000)],
+        deployer
+      );
+      
+      // Make deposit
+      simnet.callPublicFn(
+        CONTRACT_NAME,
+        "deposit",
+        [Cl.uint(depositAmount), Cl.stringAscii("short")],
+        wallet1
+      );
+      
+      // Mine blocks to pass lock period
+      simnet.mineEmptyBurnBlocks(SHORT_LOCK_BLOCKS + 1);
+      
+      // Withdraw
+      const { result } = simnet.callPublicFn(
+        CONTRACT_NAME,
+        "withdraw",
+        [],
+        wallet1
+      );
