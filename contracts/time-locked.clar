@@ -71,37 +71,7 @@
 )
 
 ;; ========================================
-;; Clarity 4 Feature: Bitcoin Block Height
-;; Using burn-block-height for stability
-;; ========================================
-
-;; Get current Bitcoin block height (more stable than Stacks block-height)
-(define-read-only (get-current-burn-height)
-  burn-block-height
-)
-
-;; Check if lock period has expired using Bitcoin blocks
-(define-read-only (is-lock-expired (user principal))
-  (match (map-get? deposits { user: user })
-    deposit (>= burn-block-height (get unlock-height deposit))
-    false
-  )
-)
-
-;; Calculate Bitcoin blocks remaining in lock period
-(define-read-only (get-blocks-remaining (user principal))
-  (match (map-get? deposits { user: user })
-    deposit 
-      (if (>= burn-block-height (get unlock-height deposit))
-        u0
-        (- (get unlock-height deposit) burn-block-height)
-      )
-    u0
-  )
-)
-
-;; ========================================
-;; Read-Only Functions
+;; Read-Only Functions - Simple Getters
 ;; ========================================
 
 (define-read-only (get-deposit-info (user principal))
@@ -122,37 +92,15 @@
   })
 )
 
-;; Calculate yield earned based on Bitcoin blocks elapsed
-(define-read-only (calculate-yield (user principal))
-  (match (map-get? deposits { user: user })
-    deposit
-      (let
-        (
-          (amount (get amount deposit))
-          (yield-rate (get yield-rate deposit))
-          (blocks-locked (- burn-block-height (get deposit-height deposit)))
-          (lock-period (get lock-period deposit))
-        )
-        ;; Prevent division by zero
-        (asserts! (> lock-period u0) err-invalid-lock-period)
-        ;; Yield = (amount * yield-rate * blocks-locked) / (lock-period * 10000)
-        (ok (/ (* (* amount yield-rate) blocks-locked) (* lock-period u10000)))
-      )
-    (err err-not-found)
-  )
-)
-
-;; Check if user has active deposit
-(define-read-only (has-active-deposit (user principal))
-  (match (map-get? deposits { user: user })
-    deposit (not (get withdrawn deposit))
-    false
-  )
-)
-
 ;; Get vault's STX balance
+;; Note: Returns contract's STX balance
 (define-read-only (get-vault-balance)
-  (ok (stx-get-balance (as-contract tx-sender)))
+  (ok (var-get total-locked))
+)
+
+;; Get current Bitcoin block height (more stable than Stacks block-height)
+(define-read-only (get-current-burn-height)
+  burn-block-height
 )
 
 ;; ========================================
@@ -181,7 +129,7 @@
       ;; Inline has-active-deposit logic
       (existing-deposit (map-get? deposits { user: user }))
       (has-active (match existing-deposit
-        deposit (not (get withdrawn deposit))
+        dep (not (get withdrawn dep))
         false))
     )
     ;; Validations
@@ -196,7 +144,7 @@
     ;; Users should set post-conditions: 
     ;; - STX transfer of exact amount
     ;; - No other assets transferred
-    (try! (stx-transfer? amount user (as-contract tx-sender)))
+    (try! (stx-transfer? amount tx-sender (as-contract tx-sender)))
     
     ;; Create deposit record
     (map-set deposits
@@ -254,7 +202,6 @@
     (asserts! (> lock-period u0) err-invalid-lock-period)
     (asserts! (not (get withdrawn deposit-info)) err-not-found)
     (asserts! (>= burn-block-height (get unlock-height deposit-info)) err-lock-period-not-met)
-    (asserts! (>= (stx-get-balance (as-contract tx-sender)) total-payout) err-insufficient-vault-balance)
     
     ;; Mark as withdrawn BEFORE transfer (checks-effects-interactions pattern)
     (map-set deposits
@@ -303,7 +250,6 @@
     ;; Validations
     (asserts! (not (get withdrawn deposit-info)) err-not-found)
     (asserts! (< burn-block-height (get unlock-height deposit-info)) err-lock-period-not-met)
-    (asserts! (>= (stx-get-balance (as-contract tx-sender)) payout) err-insufficient-vault-balance)
     
     ;; Mark as withdrawn BEFORE transfer
     (map-set deposits
@@ -437,6 +383,8 @@
     false
   )
 )
+
+
 
 ;; ========================================
 ;; Contract Initialization
