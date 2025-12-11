@@ -374,3 +374,56 @@
     )
   )
 )
+
+(define-private (get-yield-rate (tier (string-ascii 10)))
+  (if (is-eq tier "short")
+    short-lock-multiplier
+    (if (is-eq tier "medium")
+      medium-lock-multiplier
+      (if (is-eq tier "long")
+        long-lock-multiplier
+        u0
+      )
+    )
+  )
+)
+
+(define-private (update-user-stats-deposit (user principal) (amount uint))
+  (match (map-get? user-stats { user: user })
+    stats
+      (map-set user-stats
+        { user: user }
+        {
+          total-deposited: (+ (get total-deposited stats) amount),
+          total-withdrawn: (get total-withdrawn stats),
+          total-yield-earned: (get total-yield-earned stats),
+          deposit-count: (+ (get deposit-count stats) u1)
+        }
+      )
+    (map-set user-stats
+      { user: user }
+      {
+        total-deposited: amount,
+        total-withdrawn: u0,
+        total-yield-earned: u0,
+        deposit-count: u1
+      }
+    )
+  )
+)
+
+(define-private (update-user-stats-withdraw (user principal) (amount uint) (yield uint))
+  (match (map-get? user-stats { user: user })
+    stats
+      (map-set user-stats
+        { user: user }
+        {
+          total-deposited: (get total-deposited stats),
+          total-withdrawn: (+ (get total-withdrawn stats) amount),
+          total-yield-earned: (+ (get total-yield-earned stats) yield),
+          deposit-count: (get deposit-count stats)
+        }
+      )
+    false
+  )
+)
